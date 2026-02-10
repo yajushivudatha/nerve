@@ -1,5 +1,4 @@
 import { ai } from '../lib/genAI';
-import { Type } from "@google/genai";
 
 export interface MarketData {
   ticker: string;
@@ -25,31 +24,44 @@ export const fetchRealTimeData = async (ticker: string): Promise<MarketData | nu
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: `Find the current real-time stock price, today's percentage change, and trading volume for ${ticker}. Also analyze the immediate short-term sentiment based on recent news headlines.`,
+      model: 'gemini-3-flash-preview',
+      contents: `Find the current real-time stock price, today's percentage change, and trading volume for ${ticker}. Also analyze the immediate short-term sentiment based on recent news headlines.
+
+      Return the response as a raw JSON object (no markdown, no code blocks) with the following structure:
+      {
+        "price": number,
+        "changePercent": number, 
+        "volume": string,
+        "sentiment": "BULLISH" | "BEARISH" | "NEUTRAL"
+      }`,
       config: {
-        tools: [{ googleSearch: {} }],
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            price: { type: Type.NUMBER, description: "Current price in USD" },
-            changePercent: { type: Type.NUMBER, description: "Percentage change today (e.g. 1.5 or -2.3)" },
-            volume: { type: Type.STRING, description: "Volume e.g. '45.2M'" },
-            sentiment: { type: Type.STRING, enum: ['BULLISH', 'BEARISH', 'NEUTRAL'] }
-          }
-        }
+        tools: [{ googleSearch: {} }]
       }
     });
 
-    const data = JSON.parse(response.text);
+    let jsonStr = response.text || "{}";
+    
+    // Clean up potential markdown code blocks
+    if (jsonStr.includes("```")) {
+      jsonStr = jsonStr.replace(/```json/g, "").replace(/```/g, "");
+    }
+    
+    // Attempt to find the JSON object if there is extra text
+    const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+        jsonStr = jsonMatch[0];
+    }
+    
+    jsonStr = jsonStr.trim();
+
+    const data = JSON.parse(jsonStr);
     
     return {
       ticker: ticker.toUpperCase(),
-      price: data.price || 0,
-      changePercent: data.changePercent || 0,
+      price: typeof data.price === 'number' ? data.price : 0,
+      changePercent: typeof data.changePercent === 'number' ? data.changePercent : 0,
       volume: data.volume || 'N/A',
-      sentiment: data.sentiment || 'NEUTRAL',
+      sentiment: ['BULLISH', 'BEARISH', 'NEUTRAL'].includes(data.sentiment) ? data.sentiment : 'NEUTRAL',
       lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
 
